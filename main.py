@@ -11,13 +11,13 @@ FRAME_WIDTH_PIXELS = 1280
 # the height of the frame in cm
 FRAME_HEIGHT_CM = 52.5
 # the width of the frame in cm
-FRAME_WIDTH_CM = 100.0
+FRAME_WIDTH_CM = 85.0
 # the minimum threshold of the red pixel before considered a fire
 RED_THRESHOLD = 128
 # the size of the gaussian kernel to run over the image
 GAUSSIAN_KERNEL_SIZE = 10
 # the width of the moving average window to use to smooth the signal on each bin
-MOVING_AVG_LENGTH = 1
+MOVING_AVG_LENGTH = 20
 # the number of bins to split the image into horizontally
 NUM_BINS = 128
 # the minimum number of pixel required in a bin before it is considered to be on fire
