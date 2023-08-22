@@ -1,7 +1,10 @@
-import sys
 import os.path as path
+import sys
+
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import cm
 
 """PROGRAM CONSTANTS"""
 # the height of the frame in pixels
@@ -11,22 +14,25 @@ FRAME_WIDTH_PIXELS = 1280
 # the height of the frame in cm
 FRAME_HEIGHT_CM = 52.5
 # the width of the frame in cm
-FRAME_WIDTH_CM = 100.0
+FRAME_WIDTH_CM = 85.0
 # the minimum threshold of the red pixel before considered a fire
 RED_THRESHOLD = 128
 # the size of the gaussian kernel to run over the image
 GAUSSIAN_KERNEL_SIZE = 10
 # the width of the moving average window to use to smooth the signal on each bin
-MOVING_AVG_LENGTH = 1
+MOVING_AVG_LENGTH = 100
 # the number of bins to split the image into horizontally
-NUM_BINS = 128
+NUM_BINS = 32
 # the minimum number of pixel required in a bin before it is considered to be on fire
 MIN_BIN_INTENSITY_PIXELS = 30
 
 """RUNTIME CONSTANTS"""
-gaussian_kernel = np.ones((GAUSSIAN_KERNEL_SIZE, GAUSSIAN_KERNEL_SIZE), np.float32) / (GAUSSIAN_KERNEL_SIZE ** 2)
+gaussian_kernel = np.ones((GAUSSIAN_KERNEL_SIZE, GAUSSIAN_KERNEL_SIZE), np.float32) / (
+    GAUSSIAN_KERNEL_SIZE**2
+)
 height_pix_to_cm = FRAME_HEIGHT_CM / FRAME_HEIGHT_PIXELS
-width_pix_to_cm = FRAME_WIDTH_CM / FRAME_WIDTH_PIXELS
+width_pix_to_cm = FRAME_WIDTH_CM / NUM_BINS
+
 
 def get_height(image: np.ndarray) -> np.ndarray:
     # get the red color
@@ -41,12 +47,14 @@ def get_height(image: np.ndarray) -> np.ndarray:
     # split the image up into many discrete bins
     # the dimensions are now [bins, height, width], range=[0, 1]
     assert image.shape[-1] % NUM_BINS == 0
-    image = np.split(image, image.shape[-1] // NUM_BINS, axis=-1)
-    image = np.array(image).transpose((2, 1, 0))
+    image = np.split(image, NUM_BINS, axis=-1)
+    image = np.stack(image, axis=0)
 
     # threshold the intensity
     # the dimensions are now [bins, height, width], range=[0, 1]
-    image = image * (np.sum(image, axis=(1, 2), keepdims=True) > MIN_BIN_INTENSITY_PIXELS)
+    image = image * (
+        np.sum(image, axis=(1, 2), keepdims=True) > MIN_BIN_INTENSITY_PIXELS
+    )
 
     # sum up over the width of each bin, crush all zeros
     # the dimensions are now [bins, height], range=[0, 1]
@@ -74,7 +82,8 @@ def process_video(filename: str) -> np.ndarray:
     while True:
         # try read a frame, if fail just break
         success, image = vidcap.read()
-        if not success or image is None: break
+        if not success or image is None:
+            break
 
         heights.append(get_height(image))
 
@@ -85,10 +94,13 @@ def process_video(filename: str) -> np.ndarray:
 def process_heights(heights):
     # heights is of shape [time, bins], range=[0, FRAME_HEIGHT_CM]
     # run a moving average window
-    convolve1d = lambda x: np.convolve(x, np.ones(MOVING_AVG_LENGTH) / MOVING_AVG_LENGTH, mode="valid")
+    convolve1d = lambda x: np.convolve(
+        x, np.ones(MOVING_AVG_LENGTH) / MOVING_AVG_LENGTH, mode="valid"
+    )
     heights = np.apply_along_axis(convolve1d, axis=0, arr=heights)
 
     return heights
+
 
 def process_fronts(heights):
     # heights is of shape [time, bins], range=[0, FRAME_HEIGHT_CM]
@@ -101,16 +113,29 @@ def process_fronts(heights):
 
     return bin_front * width_pix_to_cm
 
+
+def create_surface(heights, save_path):
+    x, t = np.meshgrid(np.arange(heights.shape[1]) * width_pix_to_cm, np.arange(heights.shape[0]) / 60.0)
+
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    surf = ax.plot_surface(x, t, heights, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+    ax.set_xlabel("width, cm")
+    ax.set_ylabel("time, seconds")
+    ax.set_zlabel("height, cm")
+    plt.savefig(save_path)
+
+
 if __name__ == "__main__":
     # handle names
     dirname = path.dirname(__file__)
     mov_path = path.basename(sys.argv[1])
     npy_path = f"{path.join(dirname, 'npys/', mov_path)}.npy"
+    figs_path = f"{path.join(dirname, 'figs/', mov_path)}.png"
     csv_heights_path = f"{path.join(dirname, 'csvs/', mov_path)}_heights.csv"
     csv_fronts_path = f"{path.join(dirname, 'csvs/', mov_path)}_fronts.csv"
 
     # check if we need to process the video if the pixel heights already exists
-    if not path.exists(npy_path) or True:
+    if not path.exists(npy_path):
         heights = process_video(mov_path)
         np.save(npy_path, heights)
     else:
@@ -123,3 +148,7 @@ if __name__ == "__main__":
     # save as npy array and csv
     np.savetxt(csv_heights_path, heights, delimiter=",")
     np.savetxt(csv_fronts_path, fronts, delimiter=",")
+
+    # plot the surface
+    create_surface(heights, figs_path)
+
